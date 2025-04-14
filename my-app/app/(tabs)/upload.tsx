@@ -7,6 +7,7 @@ import {
   StyleSheet,
   ActivityIndicator,
   Animated,
+  Alert,
 } from "react-native";
 import { router } from "expo-router";
 import { MaterialIcons } from "@expo/vector-icons";
@@ -16,6 +17,7 @@ import dummyData from "../../data/dummyData";
 import FlashcardItem from "../../components/FlashcardItem";
 import { theme } from "../../theme/theme";
 import { commonStyles, iosButton, iosCard } from "../../utils/styles";
+import { supabase } from "../../lib/supabase";
 
 const Upload = () => {
   const [file, setFile] = useState<DocumentPicker.DocumentResult | null>(null);
@@ -29,6 +31,7 @@ const Upload = () => {
   const [showSuccess, setShowSuccess] = useState(false);
   const fadeAnim = new Animated.Value(0);
   const scaleAnim = new Animated.Value(0.8);
+  const progressAnim = new Animated.Value(0);
 
   useEffect(() => {
     if (showSuccess) {
@@ -58,13 +61,30 @@ const Upload = () => {
     try {
       const result = await DocumentPicker.getDocumentAsync({
         type: ["application/pdf", "application/msword", "text/plain"],
+        copyToCacheDirectory: true,
       });
 
-      if (result.type === "success") {
-        setFile(result);
+      if (result.assets && result.assets.length > 0) {
+        const file = result.assets[0];
+        console.log("File picked:", file);
+        setFile({
+          name: file.name,
+          uri: file.uri,
+          mimeType: file.mimeType,
+          size: file.size,
+        });
+      } else if (result.canceled) {
+        console.log("Document picker was cancelled by user");
+      } else {
+        console.error("Unexpected document picker result:", result);
+        Alert.alert(
+          "Error",
+          "An unexpected error occurred while picking the document"
+        );
       }
     } catch (err) {
       console.error("Error picking document:", err);
+      Alert.alert("Error", "Failed to pick document. Please try again.");
     }
   };
 
@@ -73,48 +93,90 @@ const Upload = () => {
 
     setIsUploading(true);
     setUploadProgress(0);
+    progressAnim.setValue(0);
 
     try {
-      // Create FormData
-      const formData = new FormData();
-      formData.append("files", {
-        uri: file.uri,
-        type: file.mimeType,
-        name: file.name,
-      } as any);
+      // Upload file to Supabase Storage
+      const fileExt = file.name.split(".").pop();
+      const fileName = `${Date.now()}.${fileExt}`;
+      const filePath = `documents/${fileName}`;
 
-      // Upload file
-      const uploadResponse = await fetch("http://localhost:8000/upload", {
+      // Read the file content
+      const response = await fetch(file.uri);
+      const blob = await response.blob();
+
+      const { data: uploadData, error: uploadError } = await supabase.storage
+        .from("documents")
+        .upload(filePath, blob, {
+          contentType: file.mimeType,
+          upsert: true,
+        });
+
+      if (uploadError) {
+        console.error("Supabase upload error:", uploadError);
+        throw new Error("Supabase upload failed: " + uploadError.message);
+      }
+
+      console.log("File uploaded successfully:", uploadData);
+
+      // Get the public URL
+      const {
+        data: { publicUrl },
+      } = supabase.storage.from("documents").getPublicUrl(filePath);
+
+      console.log("Public URL:", publicUrl);
+
+      // Animate progress
+      Animated.timing(progressAnim, {
+        toValue: 1,
+        duration: 2000,
+        useNativeDriver: false,
+      }).start();
+
+      // Update progress state
+      const interval = setInterval(() => {
+        setUploadProgress((prev) => {
+          const newProgress = prev + 5;
+          return newProgress > 100 ? 100 : newProgress;
+        });
+      }, 100);
+
+      // Generate flashcards using the uploaded file
+      const generateResponse = await fetch("http://localhost:8000/generate", {
         method: "POST",
-        body: formData,
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          file_url: publicUrl,
+          num_flash_cards: 5,
+        }),
       });
 
-      if (!uploadResponse.ok) {
-        throw new Error("Upload failed");
-      }
-
-      // Simulate progress
-      for (let i = 0; i <= 100; i += 10) {
-        await new Promise((resolve) => setTimeout(resolve, 200));
-        setUploadProgress(i);
-      }
-
-      // Generate flashcards
-      const generateResponse = await fetch(
-        "http://localhost:8000/generate?num_flash_cards=5"
-      );
       if (!generateResponse.ok) {
-        throw new Error("Flashcard generation failed");
+        const errorData = await generateResponse.json();
+        console.error("Generate error:", errorData);
+        throw new Error(
+          "Flashcard generation failed: " + JSON.stringify(errorData)
+        );
       }
 
       const flashcards = await generateResponse.json();
+      console.log("Generated flashcards:", flashcards);
       setGeneratedFlashcards(flashcards);
+
+      clearInterval(interval);
       setIsUploading(false);
       setShowSuccess(true);
     } catch (error) {
-      console.error("Error:", error);
+      console.error("Error in handleUpload:", error);
       setIsUploading(false);
-      // Handle error appropriately
+      // Show error to user
+      Alert.alert(
+        "Upload Failed",
+        error.message || "An error occurred during upload",
+        [{ text: "OK" }]
+      );
     }
   };
 
@@ -307,6 +369,19 @@ const Upload = () => {
                     size="small"
                     color={theme.colors.primary}
                   />
+                  <View style={styles.progressContainer}>
+                    <Animated.View
+                      style={[
+                        styles.progressBar,
+                        {
+                          width: progressAnim.interpolate({
+                            inputRange: [0, 1],
+                            outputRange: ["0%", "100%"],
+                          }),
+                        },
+                      ]}
+                    />
+                  </View>
                   <Text style={styles.uploadingText}>
                     Uploading... {uploadProgress}%
                   </Text>
@@ -443,10 +518,18 @@ const styles = StyleSheet.create({
     padding: theme.spacing.sm,
   },
   uploadingContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
+    gap: theme.spacing.md,
     padding: theme.spacing.xl,
+  },
+  progressContainer: {
+    height: 4,
+    backgroundColor: theme.colors.secondary,
+    borderRadius: 2,
+    overflow: "hidden",
+  },
+  progressBar: {
+    height: "100%",
+    backgroundColor: theme.colors.primary,
   },
   uploadingText: {
     marginLeft: theme.spacing.sm,

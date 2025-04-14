@@ -1,10 +1,16 @@
 import uvicorn
-from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi import FastAPI, UploadFile, File, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from typing import Union
 import os
+import requests
 from bot import Bot
+from pydantic import BaseModel
 
+class GenerateRequest(BaseModel):
+    file_url: str
+    num_flash_cards: int = 5
+    optional_instructions: str = ""
 
 origins = [
     "http://localhost:3000",
@@ -29,54 +35,34 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-
 TEMP_FOLDER = "temp"
 
-
-@app.post("/upload")
-async def upload(files: list[UploadFile] = File(...)):
+@app.post("/generate")
+async def generate(request: GenerateRequest):
     try:
-        # create temp folder if it does not exist
+        # Download file from Supabase URL
+        response = requests.get(request.file_url)
+        if not response.ok:
+            raise HTTPException(
+                status_code=400,
+                detail="Failed to download file from Supabase"
+            )
+
+        # Create temp folder if it doesn't exist
         if not os.path.exists(TEMP_FOLDER):
             os.makedirs(TEMP_FOLDER)
         else:
-            # remove all files in temp folder
+            # Clear temp folder
             for filename in os.listdir(TEMP_FOLDER):
                 file_path = os.path.join(TEMP_FOLDER, filename)
                 os.remove(file_path)
 
-        # process all the files
-        saved_files = []
-        for file in files:
-            file_path = os.path.join(TEMP_FOLDER, file.filename)
-            with open(file_path, "wb") as f:
-                f.write(file.file.read())
-            saved_files.append(file.filename)
+        # Save the file
+        file_path = os.path.join(TEMP_FOLDER, "document.pdf")
+        with open(file_path, "wb") as f:
+            f.write(response.content)
 
-        return {"uploaded": saved_files}
-
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@app.get("/generate")
-async def generate(num_flash_cards: int = 5, optional_instructions: str = ""):
-    try:
-        # Check if temp folder exists and has files
-        if not os.path.exists(TEMP_FOLDER):
-            raise HTTPException(
-                status_code=400,
-                detail="No documents found. Please upload a document first."
-            )
-            
-        files = os.listdir(TEMP_FOLDER)
-        if not files:
-            raise HTTPException(
-                status_code=400,
-                detail="No documents found. Please upload a document first."
-            )
-
-        print(f"Processing files: {files}")  # Debug log
+        print(f"Processing file from Supabase")  # Debug log
 
         bot = Bot(TEMP_FOLDER)
         try:
@@ -91,8 +77,8 @@ async def generate(num_flash_cards: int = 5, optional_instructions: str = ""):
 
         try:
             flashcards = bot.generate(
-                num_flash_cards=num_flash_cards,
-                optional_instructions=optional_instructions
+                num_flash_cards=request.num_flash_cards,
+                optional_instructions=request.optional_instructions
             )
             print(f"Generated {len(flashcards)} flashcards")  # Debug log
             return flashcards
@@ -111,7 +97,6 @@ async def generate(num_flash_cards: int = 5, optional_instructions: str = ""):
             status_code=500,
             detail=f"An unexpected error occurred: {str(e)}"
         )
-
 
 if __name__ == "__main__":
     uvicorn.run("main:app", reload=True)
