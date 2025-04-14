@@ -1,0 +1,134 @@
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 195 100% 98%;
+    --foreground: 195 80% 20%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 195 80% 20%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 195 80% 20%;
+
+    --primary: 195 100% 42%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 195 100% 96%;
+    --secondary-foreground: 195 80% 30%;
+
+    --muted: 195 10% 96%;
+    --muted-foreground: 195 40% 40%;
+
+    --accent: 187 100% 42%;
+    --accent-foreground: 0 0% 100%;
+
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 0 0% 98%;
+
+    --border: 195 20% 90%;
+    --input: 195 20% 90%;
+    --ring: 195 100% 42%;
+
+    --radius: 0.75rem;
+  }
+
+  .dark {
+    --background: 195 80% 10%;
+    --foreground: 195 10% 98%;
+
+    --card: 195 80% 12%;
+    --card-foreground: 195 10% 98%;
+
+    --popover: 195 80% 12%;
+    --popover-foreground: 195 10% 98%;
+
+    --primary: 195 100% 42%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 195 50% 20%;
+    --secondary-foreground: 0 0% 98%;
+
+    --muted: 195 50% 20%;
+    --muted-foreground: 195 40% 70%;
+
+    --accent: 187 100% 42%;
+    --accent-foreground: 0 0% 100%;
+
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 0 0% 98%;
+
+    --border: 195 50% 20%;
+    --input: 195 50% 20%;
+    --ring: 195 100% 42%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-cyan-50 text-foreground overflow-x-hidden;
+    font-feature-settings: "rlig" 1, "calt" 1;
+  }
+}
+
+@layer components {
+  .flip-card {
+    @apply relative w-full h-full perspective-1000 transition-all duration-500 transform-style-preserve-3d;
+  }
+
+  .flip-front, .flip-back {
+    @apply absolute w-full h-full backface-hidden transition-all duration-700;
+  }
+
+  .flip-back {
+    transform: rotateY(180deg);
+  }
+
+  .perspective-1000 {
+    perspective: 1000px;
+  }
+
+  .backface-hidden {
+    backface-visibility: hidden;
+  }
+
+  .transform-style-preserve-3d {
+    transform-style: preserve-3d;
+  }
+
+  .btn-primary {
+    @apply bg-primary text-primary-foreground hover:bg-primary/90 inline-flex items-center justify-center rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 h-10 px-4 py-2 shadow-[0_4px_10px_rgba(0,178,214,0.3)] hover:shadow-[0_6px_15px_rgba(0,178,214,0.4)] transition-all duration-300;
+  }
+
+  .btn-secondary {
+    @apply bg-secondary text-secondary-foreground hover:bg-secondary/80 inline-flex items-center justify-center rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 h-10 px-4 py-2 shadow-[0_4px_10px_rgba(235,245,250,0.3)] hover:shadow-[0_6px_15px_rgba(235,245,250,0.4)] transition-all duration-300;
+  }
+
+  .btn-ghost {
+    @apply hover:bg-accent hover:text-accent-foreground inline-flex items-center justify-center rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 h-10 px-4 py-2 hover:shadow-[0_4px_10px_rgba(0,214,214,0.2)] transition-all duration-300;
+  }
+
+  .card-hover {
+    @apply transition-all duration-300 shadow-[0_10px_20px_rgba(0,178,214,0.1)] hover:shadow-[0_14px_28px_rgba(0,178,214,0.2)] hover:-translate-y-1;
+  }
+  
+  .ios-card {
+    @apply bg-white rounded-xl border border-gray-100 shadow-[0_10px_20px_rgba(0,178,214,0.1)] backdrop-blur-sm;
+  }
+  
+  .ios-button {
+    @apply rounded-full shadow-[0_4px_10px_rgba(0,178,214,0.2)] active:shadow-[0_2px_5px_rgba(0,178,214,0.1)] active:translate-y-0.5 transition-all duration-200;
+  }
+  
+  .floating-element {
+    @apply shadow-[0_10px_20px_rgba(0,0,0,0.1)] hover:shadow-[0_14px_28px_rgba(0,0,0,0.15)] transition-all duration-300;
+  }
+}
+
