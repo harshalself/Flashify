@@ -96,35 +96,85 @@ const Upload = () => {
     progressAnim.setValue(0);
 
     try {
-      // Upload file to Supabase Storage
-      const fileExt = file.name.split(".").pop();
-      const fileName = `${Date.now()}.${fileExt}`;
+      // Create a unique filename
+      const timestamp = new Date().getTime();
+      const fileExtension = file.name.split(".").pop();
+      const fileName = `document_${timestamp}.${fileExtension}`;
       const filePath = `documents/${fileName}`;
 
       // Read the file content
+      console.log("Reading file content from:", file.uri);
       const response = await fetch(file.uri);
-      const blob = await response.blob();
+      if (!response.ok) {
+        throw new Error(
+          `Failed to read file: ${response.status} ${response.statusText}`
+        );
+      }
 
+      const blob = await response.blob();
+      console.log("File blob size:", blob.size);
+
+      if (blob.size === 0) {
+        throw new Error("File is empty after reading");
+      }
+
+      // Convert blob to base64
+      const reader = new FileReader();
+      const base64Promise = new Promise((resolve, reject) => {
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = reject;
+      });
+      reader.readAsDataURL(blob);
+      const base64Data = await base64Promise;
+
+      // Remove the data URL prefix
+      const base64String = base64Data.split(",")[1];
+      const binaryString = atob(base64String);
+      const bytes = new Uint8Array(binaryString.length);
+      for (let i = 0; i < binaryString.length; i++) {
+        bytes[i] = binaryString.charCodeAt(i);
+      }
+
+      console.log("Converted to Uint8Array, size:", bytes.length);
+
+      // Upload to Supabase
+      console.log("Uploading to Supabase...");
       const { data: uploadData, error: uploadError } = await supabase.storage
         .from("documents")
-        .upload(filePath, blob, {
-          contentType: file.mimeType,
-          upsert: true,
+        .upload(filePath, bytes, {
+          contentType: file.mimeType || "application/pdf",
+          upsert: false,
+          cacheControl: "3600",
         });
 
       if (uploadError) {
         console.error("Supabase upload error:", uploadError);
-        throw new Error("Supabase upload failed: " + uploadError.message);
+        throw new Error(uploadError.message);
       }
 
       console.log("File uploaded successfully:", uploadData);
 
-      // Get the public URL
+      // Get public URL
       const {
         data: { publicUrl },
       } = supabase.storage.from("documents").getPublicUrl(filePath);
 
       console.log("Public URL:", publicUrl);
+
+      // Verify the uploaded file
+      const verifyResponse = await fetch(publicUrl);
+      if (!verifyResponse.ok) {
+        throw new Error(
+          `Failed to verify upload: ${verifyResponse.status} ${verifyResponse.statusText}`
+        );
+      }
+
+      const verifyBlob = await verifyResponse.blob();
+      console.log("Verified file size:", verifyBlob.size);
+
+      if (verifyBlob.size === 0) {
+        throw new Error("Uploaded file is empty");
+      }
 
       // Animate progress
       Animated.timing(progressAnim, {
@@ -141,29 +191,32 @@ const Upload = () => {
         });
       }, 100);
 
-      // Generate flashcards using the uploaded file
-      const generateResponse = await fetch("http://localhost:8000/generate", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          file_url: publicUrl,
-          num_flash_cards: 5,
-        }),
-      });
+      // Generate flashcards
+      console.log("Generating flashcards...");
+      const generateResponse = await fetch(
+        "http://192.168.0.133:8000/generate",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            file_url: publicUrl,
+            num_flash_cards: 5,
+            optional_instructions: "",
+          }),
+        }
+      );
 
       if (!generateResponse.ok) {
         const errorData = await generateResponse.json();
         console.error("Generate error:", errorData);
-        throw new Error(
-          "Flashcard generation failed: " + JSON.stringify(errorData)
-        );
+        throw new Error(errorData.detail || "Failed to generate flashcards");
       }
 
-      const flashcards = await generateResponse.json();
-      console.log("Generated flashcards:", flashcards);
-      setGeneratedFlashcards(flashcards);
+      const data = await generateResponse.json();
+      setGeneratedFlashcards(data);
+      setCurrentFlashcardIndex(0);
 
       clearInterval(interval);
       setIsUploading(false);
@@ -171,11 +224,11 @@ const Upload = () => {
     } catch (error) {
       console.error("Error in handleUpload:", error);
       setIsUploading(false);
-      // Show error to user
       Alert.alert(
-        "Upload Failed",
-        error.message || "An error occurred during upload",
-        [{ text: "OK" }]
+        "Error",
+        error instanceof Error
+          ? error.message
+          : "Failed to upload and process file"
       );
     }
   };
