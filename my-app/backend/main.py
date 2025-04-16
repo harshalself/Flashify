@@ -1,16 +1,22 @@
 import uvicorn
 from fastapi import FastAPI, UploadFile, File, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from typing import Union
+from typing import Union, Optional
 import os
 import requests
 from bot import Bot
 from pydantic import BaseModel
+import tempfile
+import logging
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 class GenerateRequest(BaseModel):
     file_url: str
-    num_flash_cards: int = 5
-    optional_instructions: str = ""
+    num_flash_cards: Optional[int] = 5
+    optional_instructions: Optional[str] = ""
 
 origins = [
     "http://localhost:3000",
@@ -39,117 +45,49 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-TEMP_FOLDER = "temp"
+# Create a temporary directory for file processing
+TEMP_FOLDER = tempfile.mkdtemp()
+logger.info(f"Created temporary folder: {TEMP_FOLDER}")
 
 @app.post("/generate")
-async def generate(request: GenerateRequest):
+async def generate_flashcards(request: GenerateRequest):
     try:
-        # Download file from Supabase URL
-        print(f"Downloading file from URL: {request.file_url}")  # Debug log
+        logger.info("Starting flashcard generation process")
         
-        # Add headers to mimic a browser request
-        headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-            'Accept': '*/*',
-            'Accept-Language': 'en-US,en;q=0.9',
-            'Connection': 'keep-alive',
-            'Referer': 'https://pnxcyuwebcqrxkqbnzcd.supabase.co/'
-        }
+        # Download file from Supabase
+        logger.info(f"Downloading file from: {request.file_url}")
+        response = requests.get(request.file_url)
+        if response.status_code != 200:
+            raise HTTPException(status_code=400, detail="Failed to download file from Supabase")
         
-        try:
-            response = requests.get(request.file_url, headers=headers, stream=True)
-            if not response.ok:
-                print(f"Download failed with status: {response.status_code}")  # Debug log
-                print(f"Response headers: {response.headers}")  # Debug log
-                print(f"Response content: {response.text}")  # Debug log
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"Failed to download file from Supabase. Status: {response.status_code}"
-                )
-        except requests.exceptions.RequestException as e:
-            print(f"Request exception: {str(e)}")  # Debug log
-            raise HTTPException(
-                status_code=400,
-                detail=f"Failed to download file: {str(e)}"
-            )
-
-        # Create temp folder if it doesn't exist
-        if not os.path.exists(TEMP_FOLDER):
-            os.makedirs(TEMP_FOLDER)
-        else:
-            # Clear temp folder
-            for filename in os.listdir(TEMP_FOLDER):
-                file_path = os.path.join(TEMP_FOLDER, filename)
-                try:
-                    os.remove(file_path)
-                except Exception as e:
-                    print(f"Error removing file {file_path}: {str(e)}")  # Debug log
-
-        # Save the file
+        # Save file to temp folder
         file_path = os.path.join(TEMP_FOLDER, "document.pdf")
-        total_size = 0
-        try:
-            with open(file_path, "wb") as f:
-                for chunk in response.iter_content(chunk_size=8192):
-                    if chunk:
-                        f.write(chunk)
-                        total_size += len(chunk)
-                        print(f"Downloaded {total_size} bytes so far...")
-        except Exception as e:
-            print(f"Error saving file: {str(e)}")  # Debug log
-            raise HTTPException(
-                status_code=500,
-                detail=f"Failed to save file: {str(e)}"
-            )
-
-        print(f"File downloaded and saved to: {file_path}")  # Debug log
-        print(f"Total file size: {total_size} bytes")  # Debug log
+        with open(file_path, "wb") as f:
+            f.write(response.content)
+        logger.info(f"File saved to: {file_path}")
         
-        # Verify file exists and has content
-        if not os.path.exists(file_path):
-            raise HTTPException(status_code=500, detail="File was not saved correctly")
-            
-        file_size = os.path.getsize(file_path)
-        print(f"Actual file size on disk: {file_size} bytes")
-        
-        if file_size == 0:
-            raise HTTPException(status_code=500, detail="Downloaded file is empty")
-
-        print(f"Processing file from Supabase")  # Debug log
-
+        # Initialize bot and process file
         bot = Bot(TEMP_FOLDER)
-        try:
-            bot.load()
-            print("Document loaded successfully")  # Debug log
-        except Exception as e:
-            print(f"Error in bot.load(): {str(e)}")  # Debug log
-            raise HTTPException(
-                status_code=500,
-                detail=f"Failed to load document: {str(e)}"
-            )
-
-        try:
-            flashcards = bot.generate(
-                num_flash_cards=request.num_flash_cards,
-                optional_instructions=request.optional_instructions
-            )
-            print(f"Generated {len(flashcards)} flashcards")  # Debug log
-            return flashcards
-        except Exception as e:
-            print(f"Error in bot.generate(): {str(e)}")  # Debug log
-            raise HTTPException(
-                status_code=500,
-                detail=f"Failed to generate flashcards: {str(e)}"
-            )
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        print(f"Unexpected error in generate: {str(e)}")  # Debug log
-        raise HTTPException(
-            status_code=500,
-            detail=f"An unexpected error occurred: {str(e)}"
+        bot.load()
+        
+        # Generate flashcards
+        flashcards = bot.generate(
+            num_flash_cards=request.num_flash_cards,
+            optional_instructions=request.optional_instructions
         )
+        
+        # Clean up temp file
+        try:
+            os.remove(file_path)
+            logger.info("Temporary file cleaned up")
+        except Exception as e:
+            logger.warning(f"Failed to clean up temporary file: {str(e)}")
+        
+        return {"flashcards": flashcards}
+        
+    except Exception as e:
+        logger.error(f"Error in generate_flashcards: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 if __name__ == "__main__":
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
