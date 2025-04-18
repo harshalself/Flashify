@@ -34,6 +34,11 @@ const Upload = () => {
   const progressAnim = new Animated.Value(0);
 
   useEffect(() => {
+    if (generatedFlashcards.length > 0) {
+      console.log("Updated flashcards state:", generatedFlashcards);
+    }
+  }, [generatedFlashcards]);
+  useEffect(() => {
     if (showSuccess) {
       Animated.parallel([
         Animated.timing(fadeAnim, {
@@ -48,12 +53,6 @@ const Upload = () => {
           useNativeDriver: true,
         }),
       ]).start();
-
-      const timer = setTimeout(() => {
-        router.push("/(tabs)/flashcards");
-      }, 2000);
-
-      return () => clearTimeout(timer);
     }
   }, [showSuccess]);
 
@@ -215,8 +214,14 @@ const Upload = () => {
       }
 
       const data = await generateResponse.json();
-      setGeneratedFlashcards(data);
-      setCurrentFlashcardIndex(0);
+      console.log("Received data:", data);
+      if (data && data.flashcards) {
+        setGeneratedFlashcards(data.flashcards);
+        console.log("!!! Generated Flash Cards: ", generatedFlashcards);
+        setCurrentFlashcardIndex(0);
+      } else {
+        throw new Error("Invalid response format from server");
+      }
 
       clearInterval(interval);
       setIsUploading(false);
@@ -233,9 +238,54 @@ const Upload = () => {
     }
   };
 
-  const handleSave = () => {
-    // Here you would typically save the flashcards to your database
-    setShowSuccess(true);
+  const handleSave = async () => {
+    try {
+      console.log("Starting save process...");
+
+      const {
+        data: { user },
+        error: userError,
+      } = await supabase.auth.getUser();
+      if (userError) {
+        console.error("Error getting user:", userError);
+        throw userError;
+      }
+      console.log("User found:", user);
+
+      // Call backend endpoint to save flashcards
+      const response = await fetch(
+        "http://192.168.0.133:8000/save-flashcards",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            flashcards: generatedFlashcards,
+            user_id: user.id,
+          }),
+        }
+      );
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        console.error("Error saving flashcards:", errorData);
+        throw new Error(errorData.detail || "Failed to save flashcards");
+      }
+
+      const result = await response.json();
+      console.log("Flashcards saved successfully:", result);
+
+      // Show success message
+      setShowSuccess(true);
+      setIsUploading(false);
+      setIsProcessing(false);
+      setFile(null);
+      setGeneratedFlashcards([]);
+    } catch (error) {
+      console.error("Error in handleSave:", error);
+      Alert.alert("Error", "Failed to save flashcards. Please try again.");
+    }
   };
 
   const handleReject = () => {
@@ -261,32 +311,32 @@ const Upload = () => {
     setIsFlipped(!isFlipped);
   };
 
-  if (showSuccess) {
-    return (
-      <View style={[commonStyles.container, styles.successContainer]}>
-        <Animated.View
-          style={[
-            styles.successContent,
-            {
-              opacity: fadeAnim,
-              transform: [{ scale: scaleAnim }],
-            },
-          ]}>
-          <View style={styles.successIconContainer}>
-            <MaterialIcons
-              name="check-circle"
-              size={64}
-              color={theme.colors.primary}
-            />
-          </View>
-          <Text style={styles.successTitle}>Upload Successful!</Text>
-          <Text style={styles.successMessage}>
-            Your flashcards have been generated and saved.
-          </Text>
-        </Animated.View>
-      </View>
-    );
-  }
+  // if (showSuccess) {
+  //   return (
+  //     <View style={[commonStyles.container, styles.successContainer]}>
+  //       <Animated.View
+  //         style={[
+  //           styles.successContent,
+  //           {
+  //             opacity: fadeAnim,
+  //             transform: [{ scale: scaleAnim }],
+  //           },
+  //         ]}>
+  //         <View style={styles.successIconContainer}>
+  //           <MaterialIcons
+  //             name="check-circle"
+  //             size={64}
+  //             color={theme.colors.primary}
+  //           />
+  //         </View>
+  //         <Text style={styles.successTitle}>Upload Successful!</Text>
+  //         <Text style={styles.successMessage}>
+  //           Your flashcards have been generated and saved.
+  //         </Text>
+  //       </Animated.View>
+  //     </View>
+  //   );
+  // }
 
   return (
     <AuthCheck>

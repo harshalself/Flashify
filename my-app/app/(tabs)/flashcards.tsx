@@ -1,47 +1,84 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   View,
   Text,
   TouchableOpacity,
   ScrollView,
   StyleSheet,
+  ActivityIndicator,
 } from "react-native";
-import { router } from "expo-router";
 import { MaterialIcons } from "@expo/vector-icons";
 import AuthCheck from "../../components/AuthCheck";
-import dummyData from "../../data/dummyData";
-import FlashcardSetCard from "../../components/FlashcardSetCard";
 import FlashcardItem from "../../components/FlashcardItem";
 import { theme } from "../../theme/theme";
-import { commonStyles, iosButton } from "../../utils/styles";
+import { commonStyles, iosButton, iosCard } from "../../utils/styles";
+import { supabase } from "../../lib/supabase";
 
 const Flashcards = () => {
-  const [selectedSetId, setSelectedSetId] = useState<string | null>(null);
+  const [flashcardSets, setFlashcardSets] = useState<any[]>([]);
+  const [currentSet, setCurrentSet] = useState<any>(null);
   const [currentCardIndex, setCurrentCardIndex] = useState(0);
   const [isFlipped, setIsFlipped] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
 
-  const selectedSet = selectedSetId
-    ? dummyData.flashcardSets.find((set) => set.id === selectedSetId)
-    : null;
+  useEffect(() => {
+    fetchFlashcardSets();
+  }, []);
 
-  const selectedCards = selectedSetId
-    ? dummyData.flashcards[selectedSetId] || []
-    : [];
+  const fetchFlashcardSets = async () => {
+    try {
+      setIsLoading(true);
+      console.log("Fetching flashcard sets...");
 
-  const handleSetClick = (setId: string) => {
-    setSelectedSetId(setId);
-    setCurrentCardIndex(0);
-    setIsFlipped(false);
+      // Get current user
+      const {
+        data: { user },
+        error: userError,
+      } = await supabase.auth.getUser();
+      if (userError) throw userError;
+      if (!user) throw new Error("No authenticated user");
+
+      // Fetch flashcard sets for the current user
+      const { data: sets, error: setsError } = await supabase
+        .from("flashcard_sets")
+        .select("*")
+        .eq("user_id", user.id)
+        .order("created_at", { ascending: false });
+
+      if (setsError) throw setsError;
+      console.log("Fetched sets:", sets);
+      setFlashcardSets(sets || []);
+
+      // If there are sets, fetch the first set's flashcards
+      if (sets && sets.length > 0) {
+        await fetchFlashcards(sets[0].id);
+      }
+    } catch (error) {
+      console.error("Error fetching flashcard sets:", error);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
-  const handleBackToSets = () => {
-    setSelectedSetId(null);
-  };
+  const fetchFlashcards = async (setId: string) => {
+    try {
+      console.log("Fetching flashcards for set:", setId);
+      const { data: flashcards, error } = await supabase
+        .from("flashcards")
+        .select("*")
+        .eq("set_id", setId)
+        .order("order_index");
 
-  const handleNextCard = () => {
-    if (currentCardIndex < selectedCards.length - 1) {
-      setCurrentCardIndex((prev) => prev + 1);
+      if (error) throw error;
+      console.log("Fetched flashcards:", flashcards);
+      setCurrentSet({
+        ...flashcardSets.find((set) => set.id === setId),
+        flashcards: flashcards || [],
+      });
+      setCurrentCardIndex(0);
       setIsFlipped(false);
+    } catch (error) {
+      console.error("Error fetching flashcards:", error);
     }
   };
 
@@ -52,119 +89,138 @@ const Flashcards = () => {
     }
   };
 
+  const handleNextCard = () => {
+    if (
+      currentSet?.flashcards &&
+      currentCardIndex < currentSet.flashcards.length - 1
+    ) {
+      setCurrentCardIndex((prev) => prev + 1);
+      setIsFlipped(false);
+    }
+  };
+
   const handleFlip = () => {
     setIsFlipped(!isFlipped);
   };
 
+  if (isLoading) {
+    return (
+      <View style={[commonStyles.container, styles.loadingContainer]}>
+        <ActivityIndicator size="large" color={theme.colors.primary} />
+      </View>
+    );
+  }
+
   return (
     <AuthCheck>
       <ScrollView style={[commonStyles.container, styles.container]}>
-        {selectedSetId ? (
-          <View style={styles.content}>
-            <View style={styles.header}>
-              <TouchableOpacity
-                onPress={handleBackToSets}
-                style={[styles.backButton, iosButton]}>
-                <MaterialIcons
-                  name="arrow-back"
-                  size={24}
-                  color={theme.colors.primary}
-                />
-              </TouchableOpacity>
-              <Text style={[commonStyles.title, styles.title]}>
-                {selectedSet?.title}
+        <View style={styles.content}>
+          <Text style={[commonStyles.title, styles.title]}>My Flashcards</Text>
+
+          {flashcardSets.length === 0 ? (
+            <View style={[styles.emptyState, iosCard]}>
+              <MaterialIcons
+                name="collections-bookmark"
+                size={48}
+                color={theme.colors.primary}
+              />
+              <Text style={styles.emptyStateText}>No flashcard sets found</Text>
+              <Text style={styles.emptyStateSubtext}>
+                Upload a document to generate flashcards
               </Text>
             </View>
-
-            {selectedCards.length > 0 ? (
-              <>
-                <FlashcardItem
-                  card={{
-                    id: selectedCards[currentCardIndex].id,
-                    question: selectedCards[currentCardIndex].question,
-                    answer: selectedCards[currentCardIndex].answer,
-                    isFlipped,
-                  }}
-                  onFlip={handleFlip}
-                />
-
-                <View style={styles.navigation}>
+          ) : (
+            <>
+              <View style={styles.setSelector}>
+                {flashcardSets.map((set) => (
                   <TouchableOpacity
-                    onPress={handlePrevCard}
-                    disabled={currentCardIndex === 0}
-                    style={[styles.navButton, iosButton]}>
-                    <MaterialIcons
-                      name="chevron-left"
-                      size={24}
-                      color={
-                        currentCardIndex === 0
-                          ? theme.colors.mutedForeground
-                          : theme.colors.primary
-                      }
-                    />
-                  </TouchableOpacity>
-
-                  <View style={styles.counterContainer}>
-                    <Text style={styles.counterText}>
-                      {currentCardIndex + 1} of {selectedCards.length}{" "}
-                      flashcards
-                    </Text>
-                  </View>
-
-                  <TouchableOpacity
-                    onPress={handleNextCard}
-                    disabled={currentCardIndex === selectedCards.length - 1}
-                    style={[styles.navButton, iosButton]}>
-                    <MaterialIcons
-                      name="chevron-right"
-                      size={24}
-                      color={
-                        currentCardIndex === selectedCards.length - 1
-                          ? theme.colors.mutedForeground
-                          : theme.colors.primary
-                      }
-                    />
-                  </TouchableOpacity>
-                </View>
-              </>
-            ) : (
-              <View style={styles.emptyContainer}>
-                <Text style={styles.emptyText}>
-                  No flashcards found in this set
-                </Text>
-              </View>
-            )}
-          </View>
-        ) : (
-          <>
-            <View style={styles.header}>
-              <Text style={[commonStyles.title, styles.title]}>Flashcards</Text>
-              <TouchableOpacity
-                onPress={() => router.push("/(tabs)/upload")}
-                style={[styles.createButton, iosButton]}>
-                <MaterialIcons
-                  name="add"
-                  size={24}
-                  color={theme.colors.background}
-                />
-                <Text style={styles.buttonText}>Create</Text>
-              </TouchableOpacity>
-            </View>
-
-            <View style={styles.setsContainer}>
-              <Text style={styles.sectionTitle}>Recent Sets</Text>
-              <View style={styles.setsGrid}>
-                {dummyData.flashcardSets.map((set) => (
-                  <FlashcardSetCard
                     key={set.id}
-                    set={set}
-                    onClick={() => handleSetClick(set.id)}
-                  />
+                    style={[
+                      styles.setButton,
+                      currentSet?.id === set.id && styles.activeSetButton,
+                      iosButton,
+                    ]}
+                    onPress={() => fetchFlashcards(set.id)}>
+                    <Text
+                      style={[
+                        styles.setButtonText,
+                        currentSet?.id === set.id && styles.activeSetButtonText,
+                      ]}>
+                      {set.title}
+                    </Text>
+                  </TouchableOpacity>
                 ))}
               </View>
-            </View>
-          </>
-        )}
+
+              {currentSet?.flashcards && currentSet.flashcards.length > 0 ? (
+                <View style={styles.flashcardContainer}>
+                  <FlashcardItem
+                    card={{
+                      id: currentSet.flashcards[currentCardIndex].id,
+                      question:
+                        currentSet.flashcards[currentCardIndex].question,
+                      answer: currentSet.flashcards[currentCardIndex].answer,
+                      isFlipped,
+                    }}
+                    onFlip={handleFlip}
+                  />
+
+                  <View style={styles.navigation}>
+                    <TouchableOpacity
+                      onPress={handlePrevCard}
+                      disabled={currentCardIndex === 0}
+                      style={[styles.navButton, iosButton]}>
+                      <MaterialIcons
+                        name="chevron-left"
+                        size={24}
+                        color={
+                          currentCardIndex === 0
+                            ? theme.colors.mutedForeground
+                            : theme.colors.primary
+                        }
+                      />
+                    </TouchableOpacity>
+
+                    <View style={styles.counterContainer}>
+                      <Text style={styles.counterText}>
+                        {currentCardIndex + 1} of {currentSet.flashcards.length}{" "}
+                        flashcards
+                      </Text>
+                    </View>
+
+                    <TouchableOpacity
+                      onPress={handleNextCard}
+                      disabled={
+                        currentCardIndex === currentSet.flashcards.length - 1
+                      }
+                      style={[styles.navButton, iosButton]}>
+                      <MaterialIcons
+                        name="chevron-right"
+                        size={24}
+                        color={
+                          currentCardIndex === currentSet.flashcards.length - 1
+                            ? theme.colors.mutedForeground
+                            : theme.colors.primary
+                        }
+                      />
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              ) : (
+                <View style={[styles.emptyState, iosCard]}>
+                  <MaterialIcons
+                    name="error-outline"
+                    size={48}
+                    color={theme.colors.primary}
+                  />
+                  <Text style={styles.emptyStateText}>
+                    No flashcards in this set
+                  </Text>
+                </View>
+              )}
+            </>
+          )}
+        </View>
       </ScrollView>
     </AuthCheck>
   );
@@ -177,17 +233,54 @@ const styles = StyleSheet.create({
   content: {
     padding: theme.spacing.lg,
   },
-  header: {
-    flexDirection: "row",
+  title: {
+    marginBottom: theme.spacing.xl,
+  },
+  loadingContainer: {
+    justifyContent: "center",
     alignItems: "center",
-    justifyContent: "space-between",
+  },
+  emptyState: {
+    padding: theme.spacing.xl,
+    alignItems: "center",
+    justifyContent: "center",
+    minHeight: 300,
+  },
+  emptyStateText: {
+    fontSize: theme.typography.fontSize.lg,
+    fontWeight: "500",
+    marginTop: theme.spacing.lg,
+    marginBottom: theme.spacing.sm,
+    color: theme.colors.foreground,
+  },
+  emptyStateSubtext: {
+    fontSize: theme.typography.fontSize.sm,
+    color: theme.colors.mutedForeground,
+    textAlign: "center",
+  },
+  setSelector: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: theme.spacing.sm,
     marginBottom: theme.spacing.lg,
   },
-  backButton: {
-    padding: theme.spacing.sm,
+  setButton: {
+    paddingVertical: theme.spacing.sm,
+    paddingHorizontal: theme.spacing.md,
+    borderRadius: theme.borderRadius.md,
   },
-  title: {
-    marginBottom: 0,
+  activeSetButton: {
+    backgroundColor: theme.colors.primary,
+  },
+  setButtonText: {
+    fontSize: theme.typography.fontSize.sm,
+    color: theme.colors.foreground,
+  },
+  activeSetButtonText: {
+    color: theme.colors.background,
+  },
+  flashcardContainer: {
+    gap: theme.spacing.lg,
   },
   navigation: {
     flexDirection: "row",
@@ -204,40 +297,6 @@ const styles = StyleSheet.create({
   counterText: {
     fontSize: theme.typography.fontSize.sm,
     color: theme.colors.mutedForeground,
-  },
-  emptyContainer: {
-    padding: theme.spacing.xl,
-    alignItems: "center",
-  },
-  emptyText: {
-    fontSize: theme.typography.fontSize.base,
-    color: theme.colors.mutedForeground,
-  },
-  createButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: theme.colors.primary,
-    padding: theme.spacing.md,
-    borderRadius: theme.borderRadius.md,
-  },
-  buttonText: {
-    marginLeft: theme.spacing.sm,
-    color: theme.colors.background,
-    fontWeight: "500" as const,
-  },
-  setsContainer: {
-    padding: theme.spacing.lg,
-  },
-  sectionTitle: {
-    fontSize: theme.typography.fontSize.lg,
-    fontWeight: "600" as const,
-    marginBottom: theme.spacing.lg,
-    color: theme.colors.foreground,
-  },
-  setsGrid: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: theme.spacing.lg,
   },
 });
 

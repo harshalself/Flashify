@@ -1,9 +1,16 @@
 import React from "react";
 import { View, Text, TouchableOpacity, StyleSheet } from "react-native";
-import { FlashcardSet } from "../../types";
+import { theme } from "../../theme/theme";
+import { iosCard } from "../../utils/styles";
 
 interface FlashcardSetCardProps {
-  set: FlashcardSet;
+  set: {
+    id: string;
+    title: string;
+    description: string;
+    cardCount: number;
+    color: string;
+  };
   onClick: () => void;
 }
 
@@ -14,7 +21,7 @@ const FlashcardSetCard: React.FC<FlashcardSetCardProps> = ({
   return (
     <TouchableOpacity
       onPress={onClick}
-      style={[styles.card, { backgroundColor: set.color + "20" }]}>
+      style={[styles.card, iosCard, { backgroundColor: `${set.color}20` }]}>
       <View style={styles.content}>
         <Text style={styles.title}>{set.title}</Text>
         <Text style={styles.description}>{set.description}</Text>
@@ -27,24 +34,25 @@ const FlashcardSetCard: React.FC<FlashcardSetCardProps> = ({
 const styles = StyleSheet.create({
   card: {
     width: "48%",
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 16,
+    borderRadius: theme.borderRadius.md,
+    padding: theme.spacing.lg,
+    marginBottom: theme.spacing.lg,
   },
   content: {
-    gap: 8,
+    gap: theme.spacing.sm,
   },
   title: {
-    fontSize: 16,
-    fontWeight: "bold",
+    fontSize: theme.typography.fontSize.lg,
+    fontWeight: "600" as const,
+    color: theme.colors.foreground,
   },
   description: {
-    fontSize: 14,
-    color: "#666",
+    fontSize: theme.typography.fontSize.sm,
+    color: theme.colors.mutedForeground,
   },
   count: {
-    fontSize: 12,
-    color: "#666",
+    fontSize: theme.typography.fontSize.xs,
+    color: theme.colors.mutedForeground,
   },
 });
 
