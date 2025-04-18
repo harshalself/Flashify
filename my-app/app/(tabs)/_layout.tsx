@@ -33,26 +33,8 @@ export default function TabLayout() {
         name="index"
         options={{
           title: "Home",
-          tabBarIcon: ({ color }) => (
-            <MaterialIcons name="home" size={24} color={color} />
-          ),
-        }}
-      />
-      <Tabs.Screen
-        name="flashcards"
-        options={{
-          title: "Flashcards",
-          tabBarIcon: ({ color }) => (
-            <MaterialIcons name="school" size={24} color={color} />
-          ),
-        }}
-      />
-      <Tabs.Screen
-        name="tests"
-        options={{
-          title: "Tests",
-          tabBarIcon: ({ color }) => (
-            <MaterialIcons name="assignment" size={24} color={color} />
+          tabBarIcon: ({ color, size }) => (
+            <MaterialIcons name="home" size={size} color={color} />
           ),
         }}
       />
@@ -60,8 +42,26 @@ export default function TabLayout() {
         name="upload"
         options={{
           title: "Upload",
-          tabBarIcon: ({ color }) => (
-            <MaterialIcons name="cloud-upload" size={24} color={color} />
+          tabBarIcon: ({ color, size }) => (
+            <MaterialIcons name="cloud-upload" size={size} color={color} />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="flashcards"
+        options={{
+          title: "Flashcards",
+          tabBarIcon: ({ color, size }) => (
+            <MaterialIcons name="style" size={size} color={color} />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="tests"
+        options={{
+          title: "Tests",
+          tabBarIcon: ({ color, size }) => (
+            <MaterialIcons name="quiz" size={size} color={color} />
           ),
         }}
       />
@@ -69,8 +69,8 @@ export default function TabLayout() {
         name="settings"
         options={{
           title: "Settings",
-          tabBarIcon: ({ color }) => (
-            <MaterialIcons name="settings" size={24} color={color} />
+          tabBarIcon: ({ color, size }) => (
+            <MaterialIcons name="settings" size={size} color={color} />
           ),
         }}
       />
