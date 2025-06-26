@@ -15,14 +15,19 @@ logger = logging.getLogger(__name__)
 load_dotenv()
 
 # Configure the Gemini API
-genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
+GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
+if not GOOGLE_API_KEY:
+    logger.error("GOOGLE_API_KEY environment variable is missing.")
+    raise RuntimeError("GOOGLE_API_KEY must be set as an environment variable.")
+
+genai.configure(api_key=GOOGLE_API_KEY)
 
 class Bot:
     def __init__(self, temp_folder: str):
         self.temp_folder = temp_folder
         self.llm = ChatGoogleGenerativeAI(
             model="gemini-1.5-pro",
-            google_api_key=os.getenv("GOOGLE_API_KEY"),
+            google_api_key=GOOGLE_API_KEY,
             temperature=0.7,
             convert_system_message_to_human=True
         )

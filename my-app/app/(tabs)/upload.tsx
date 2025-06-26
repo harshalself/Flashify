@@ -8,6 +8,7 @@ import {
   ActivityIndicator,
   Animated,
   Alert,
+  Platform,
 } from "react-native";
 import { router } from "expo-router";
 import { MaterialIcons } from "@expo/vector-icons";
@@ -18,9 +19,19 @@ import FlashcardItem from "../../components/FlashcardItem";
 import { theme } from "../../theme/theme";
 import { commonStyles, iosButton, iosCard } from "../../utils/styles";
 import { supabase } from "../../lib/supabase";
+import Constants from "expo-constants";
+import type { DocumentPickerResult } from "expo-document-picker";
+import * as FileSystem from "expo-file-system";
+
+type FileAsset = {
+  name: string;
+  uri: string;
+  mimeType?: string;
+  size?: number;
+};
 
 const Upload = () => {
-  const [file, setFile] = useState<DocumentPicker.DocumentResult | null>(null);
+  const [file, setFile] = useState<FileAsset | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [generatedFlashcards, setGeneratedFlashcards] = useState<any[]>([]);
@@ -56,6 +67,24 @@ const Upload = () => {
     }
   }, [showSuccess]);
 
+  const getApiUrl = () => {
+    // 1. Try environment variable (set in app.config.js or app.json)
+    const apiUrl = Constants.expoConfig?.extra?.apiUrl;
+    if (apiUrl) return apiUrl;
+
+    // 2. Try to auto-detect local IP from Expo debugger host (for mobile)
+    // For classic Expo projects, use Constants.manifest; for EAS, use Constants.manifest2
+    const debuggerHost =
+      Constants.manifest?.debuggerHost || Constants.manifest2?.debuggerHost;
+    if (Platform.OS !== "web" && debuggerHost) {
+      const host = debuggerHost.split(":")[0];
+      return `http://${host}:8000`;
+    }
+
+    // 3. Fallback to localhost for web
+    return "http://localhost:8000";
+  };
+
   const handleFilePick = async () => {
     try {
       const result = await DocumentPicker.getDocumentAsync({
@@ -64,13 +93,13 @@ const Upload = () => {
       });
 
       if (result.assets && result.assets.length > 0) {
-        const file = result.assets[0];
-        console.log("File picked:", file);
+        const fileAsset = result.assets[0];
+        console.log("File picked:", fileAsset);
         setFile({
-          name: file.name,
-          uri: file.uri,
-          mimeType: file.mimeType,
-          size: file.size,
+          name: fileAsset.name,
+          uri: fileAsset.uri,
+          mimeType: fileAsset.mimeType,
+          size: fileAsset.size,
         });
       } else if (result.canceled) {
         console.log("Document picker was cancelled by user");
@@ -101,39 +130,21 @@ const Upload = () => {
       const fileName = `document_${timestamp}.${fileExtension}`;
       const filePath = `documents/${fileName}`;
 
-      // Read the file content
+      // Read the file content using expo-file-system
       console.log("Reading file content from:", file.uri);
-      const response = await fetch(file.uri);
-      if (!response.ok) {
-        throw new Error(
-          `Failed to read file: ${response.status} ${response.statusText}`
-        );
+      const fileInfo = await FileSystem.getInfoAsync(file.uri);
+      if (!fileInfo.exists) {
+        throw new Error("File does not exist at URI: " + file.uri);
       }
-
-      const blob = await response.blob();
-      console.log("File blob size:", blob.size);
-
-      if (blob.size === 0) {
-        throw new Error("File is empty after reading");
-      }
-
-      // Convert blob to base64
-      const reader = new FileReader();
-      const base64Promise = new Promise((resolve, reject) => {
-        reader.onload = () => resolve(reader.result);
-        reader.onerror = reject;
+      const fileData = await FileSystem.readAsStringAsync(file.uri, {
+        encoding: FileSystem.EncodingType.Base64,
       });
-      reader.readAsDataURL(blob);
-      const base64Data = await base64Promise;
-
-      // Remove the data URL prefix
-      const base64String = base64Data.split(",")[1];
-      const binaryString = atob(base64String);
+      // Convert base64 to Uint8Array
+      const binaryString = atob(fileData);
       const bytes = new Uint8Array(binaryString.length);
       for (let i = 0; i < binaryString.length; i++) {
         bytes[i] = binaryString.charCodeAt(i);
       }
-
       console.log("Converted to Uint8Array, size:", bytes.length);
 
       // Upload to Supabase
@@ -192,20 +203,17 @@ const Upload = () => {
 
       // Generate flashcards
       console.log("Generating flashcards...");
-      const generateResponse = await fetch(
-        "http://192.168.0.133:8000/generate",
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            file_url: publicUrl,
-            num_flash_cards: 5,
-            optional_instructions: "",
-          }),
-        }
-      );
+      const generateResponse = await fetch(`${getApiUrl()}/generate`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          file_url: publicUrl,
+          num_flash_cards: 5,
+          optional_instructions: "",
+        }),
+      });
 
       if (!generateResponse.ok) {
         const errorData = await generateResponse.json();
@@ -250,22 +258,22 @@ const Upload = () => {
         console.error("Error getting user:", userError);
         throw userError;
       }
+      if (!user) {
+        throw new Error("User not found. Please log in again.");
+      }
       console.log("User found:", user);
 
       // Call backend endpoint to save flashcards
-      const response = await fetch(
-        "http://192.168.0.133:8000/save-flashcards",
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            flashcards: generatedFlashcards,
-            user_id: user.id,
-          }),
-        }
-      );
+      const response = await fetch(`${getApiUrl()}/save-flashcards`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          flashcards: generatedFlashcards,
+          user_id: user.id,
+        }),
+      });
 
       if (!response.ok) {
         const errorData = await response.json();

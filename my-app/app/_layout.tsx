@@ -2,6 +2,12 @@ import { Redirect, Stack } from "expo-router";
 import { useColorScheme } from "react-native";
 import { ThemeProvider } from "../context/ThemeContext";
 import { AuthProvider } from "../context/AuthContext";
+import "react-native-url-polyfill/auto";
+import { Buffer } from "buffer";
+import process from "process";
+
+global.Buffer = Buffer;
+global.process = process;
 
 export default function RootLayout() {
   const colorScheme = useColorScheme();
